@@ -70,7 +70,7 @@ This enables evaluation of **classification performance under privacy constraint
 privacy-enhanced-distributed-data-mining/
 │
 ├── algorithms/
-│   ├── **init**.py
+│   ├── __init__.py
 │   ├── k_means_algo.py        # K-Means with RSS-RMD integration
 │   ├── naive_bayes_algo.py    # Naive Bayes with RSS-RMD integration
 │   └── rss_algo.py            # RSS and RSS-RMD secure aggregation primitives
