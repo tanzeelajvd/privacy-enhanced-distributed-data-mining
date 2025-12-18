@@ -1,1 +1,10 @@
+
+# Python
+__pycache__/
+*.pyc
+
+# Secrets / tokens
+ghp_*
+*.pem
+*.key
 *:Zone.Identifier
