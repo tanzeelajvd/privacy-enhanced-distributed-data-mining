@@ -20,7 +20,13 @@ def euclidean_distance(p1, p2):
 # --------------------------------------------------
 # K-Means with optional RSS-RMD centroid update
 # --------------------------------------------------
-def k_means_algorithm(k, clients_data, use_rss=True, tol=1e-6):
+def k_means_algorithm(
+    k,
+    clients_data,
+    use_rss=True,
+    tol=1e-3,
+    max_iter=50
+):
     point_dimension = len(clients_data[0][0])
     num_clients = len(clients_data)
 
@@ -32,7 +38,7 @@ def k_means_algorithm(k, clients_data, use_rss=True, tol=1e-6):
     centroids = np.array(centroids)
     iteration = 0
 
-    while True:
+    while iteration < max_iter:
         iteration += 1
 
         # Step 1: Assign points to nearest centroid
@@ -78,9 +84,14 @@ def k_means_algorithm(k, clients_data, use_rss=True, tol=1e-6):
 
         new_centroids = np.array(new_centroids)
 
-        # Step 4: Convergence check
-        if np.allclose(centroids, new_centroids, atol=tol):
-            print(f"Converged in {iteration} iterations")
+        # Step 4: Convergence check (RSS-safe)
+        shift = np.linalg.norm(new_centroids - centroids)
+
+        if iteration % 5 == 0:
+            print(f"Iteration {iteration}: centroid shift = {shift:.4f}")
+
+        if shift < tol:
+            print(f"Converged in {iteration} iterations (shift={shift:.6f})")
             return new_centroids, all_clusters
 
         centroids = new_centroids
@@ -94,6 +105,9 @@ def k_means_algorithm(k, clients_data, use_rss=True, tol=1e-6):
             new_clients_data.append(flat)
 
         clients_data = copy.deepcopy(new_clients_data)
+
+    print(f"Reached max iterations ({max_iter})")
+    return centroids, all_clusters
 
 
 # --------------------------------------------------

@@ -28,14 +28,8 @@ def train_naive_bayes(X, y, use_rss=True):
         X_c = X[y == c]
         n_c = len(X_c)
 
-        # Prior P(c)
-        if use_rss:
-            prior = rss_rmd_ratio(
-                np.ones(n_c),
-                np.ones(N)
-            )
-        else:
-            prior = n_c / N
+        # Class prior (plain, not RSS)
+        prior = n_c / N
 
         means = []
         variances = []
@@ -44,13 +38,11 @@ def train_naive_bayes(X, y, use_rss=True):
             values = X_c[:, j]
             ones = np.ones(len(values))
 
-            # Mean
             if use_rss:
                 mean = rss_rmd_ratio(values, ones)
             else:
                 mean = np.mean(values)
 
-            # Variance (not RSS-based)
             var = np.var(values) + 1e-9
 
             means.append(mean)
@@ -63,6 +55,7 @@ def train_naive_bayes(X, y, use_rss=True):
         }
 
     return model
+
 
 
 # --------------------------------------------------
