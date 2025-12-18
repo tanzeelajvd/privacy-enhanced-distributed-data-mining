@@ -1,11 +1,14 @@
 import copy
 import time
 import math
+import os
 import numpy as np
 import pandas as pd
-from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
 
+from sklearn.metrics import silhouette_score
 from algorithms.rss_algo import rss_rmd_ratio
+
 
 # --------------------------------------------------
 # Distance function (Euclidean)
@@ -15,18 +18,18 @@ def euclidean_distance(p1, p2):
 
 
 # --------------------------------------------------
-# K-Means with pluggable centroid update
+# K-Means with optional RSS-RMD centroid update
 # --------------------------------------------------
-def k_means_algorithm(k, clients_data, use_rss=True):
+def k_means_algorithm(k, clients_data, use_rss=True, tol=1e-6):
     point_dimension = len(clients_data[0][0])
     num_clients = len(clients_data)
 
-    # Initialize centroids randomly from data
+    # Initialize centroids from data
     centroids = []
     for i in range(k):
         centroids.append(clients_data[i % num_clients][i // num_clients])
 
-    prev_clusters = None
+    centroids = np.array(centroids)
     iteration = 0
 
     while True:
@@ -41,7 +44,7 @@ def k_means_algorithm(k, clients_data, use_rss=True):
                 cluster_idx = int(np.argmin(distances))
                 client_clusters[client_id][cluster_idx].append(point)
 
-        # Step 2: Merge client clusters
+        # Step 2: Merge clusters across clients
         all_clusters = []
         for i in range(k):
             merged = []
@@ -49,21 +52,17 @@ def k_means_algorithm(k, clients_data, use_rss=True):
                 merged.extend(client_clusters[j][i])
             all_clusters.append(merged)
 
-        # Convergence check
-        if prev_clusters == all_clusters:
-            print(f"Converged in {iteration} iterations")
-            return centroids, all_clusters
-
-        # Step 3: Update centroids
+        # Step 3: Compute new centroids
         new_centroids = []
 
-        for cluster_points in all_clusters:
+        for idx, cluster_points in enumerate(all_clusters):
             if len(cluster_points) == 0:
+                new_centroids.append(centroids[idx])
                 continue
 
             cluster_points = np.array(cluster_points)
-
             centroid = []
+
             for dim in range(point_dimension):
                 values = cluster_points[:, dim]
                 ones = np.ones(len(values))
@@ -77,11 +76,16 @@ def k_means_algorithm(k, clients_data, use_rss=True):
 
             new_centroids.append(centroid)
 
-        # Prepare for next iteration
-        centroids = copy.deepcopy(new_centroids)
-        prev_clusters = copy.deepcopy(all_clusters)
+        new_centroids = np.array(new_centroids)
 
-        # Update client data (as in your original logic)
+        # Step 4: Convergence check
+        if np.allclose(centroids, new_centroids, atol=tol):
+            print(f"Converged in {iteration} iterations")
+            return new_centroids, all_clusters
+
+        centroids = new_centroids
+
+        # Step 5: Update client data
         new_clients_data = []
         for i in range(num_clients):
             flat = []
@@ -93,21 +97,59 @@ def k_means_algorithm(k, clients_data, use_rss=True):
 
 
 # --------------------------------------------------
-# Data utilities
+# Convert clusters to labels (for silhouette)
 # --------------------------------------------------
-def split_into_n(arr, parts):
-    return np.array_split(arr, parts)
+def clusters_to_labels(clusters):
+    labels = []
+    for idx, cluster in enumerate(clusters):
+        labels.extend([idx] * len(cluster))
+    return np.array(labels)
 
 
+# --------------------------------------------------
+# Data loading utilities
+# --------------------------------------------------
 def load_data(filename, num_points=None):
-    df = pd.read_csv(filename)
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    data_dir = os.path.join(base_dir, "transformed_datasets")
+    file_path = os.path.join(data_dir, filename)
+
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"Dataset not found: {file_path}")
+
+    df = pd.read_csv(file_path)
     data = df.select_dtypes(include=[np.number]).to_numpy()
 
     if num_points:
         data = data[:num_points]
 
     clients = 3
-    return split_into_n(data, clients)
+    return np.array_split(data, clients)
+
+
+# --------------------------------------------------
+# Validation curve: Silhouette vs k
+# --------------------------------------------------
+def validation_curve_kmeans(X, clients_data, k_values):
+    simple_scores = []
+    rss_scores = []
+
+    for k in k_values:
+        print(f"\nEvaluating k = {k}")
+
+        rss_centroids, rss_clusters = k_means_algorithm(
+            k, copy.deepcopy(clients_data), use_rss=True
+        )
+        rss_labels = clusters_to_labels(rss_clusters)
+        rss_scores.append(silhouette_score(X, rss_labels))
+
+        simple_centroids, simple_clusters = k_means_algorithm(
+            k, copy.deepcopy(clients_data), use_rss=False
+        )
+        simple_labels = clusters_to_labels(simple_clusters)
+        simple_scores.append(silhouette_score(X, simple_labels))
+
+    return simple_scores, rss_scores
 
 
 # --------------------------------------------------
@@ -119,6 +161,7 @@ def main():
     k = int(input("Enter number of clusters:\n").strip())
 
     clients_data = load_data(file_name, None if num_points == 0 else num_points)
+    X_all = np.vstack(clients_data)
 
     print("\nRunning RSS-RMD K-Means...")
     start = time.time()
@@ -136,9 +179,28 @@ def main():
     simple_time = time.time() - start
     print(f"Simple K-Means completed in {simple_time:.4f} seconds")
 
-    print(
-        f"\nTime difference (RSS - Simple): {rss_time - simple_time:.4f} seconds"
+    print(f"\nTime difference (RSS - Simple): {rss_time - simple_time:.4f} seconds")
+
+    # --------------------------------------------------
+    # Validation Curve
+    # --------------------------------------------------
+    print("\nGenerating clustering validation curve...")
+
+    k_values = range(2, min(8, len(X_all) - 1))
+    simple_scores, rss_scores = validation_curve_kmeans(
+        X_all, clients_data, k_values
     )
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(k_values, simple_scores, marker="o", label="Simple K-Means")
+    plt.plot(k_values, rss_scores, marker="s", label="RSS-RMD K-Means")
+    plt.xlabel("Number of Clusters (k)")
+    plt.ylabel("Silhouette Score")
+    plt.title("Validation Curve: K-Means vs RSS-RMD K-Means")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
 
 
 if __name__ == "__main__":
