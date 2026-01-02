@@ -1,10 +1,13 @@
 
-# Python
+.ipynb_checkpoints/
 __pycache__/
 *.pyc
-
-# Secrets / tokens
-ghp_*
-*.pem
-*.key
-*:Zone.Identifier
+.env
+.DS_Store
+*Zone.Identifier
+.venv
+data/raw/
+data/temp/
+Thumbs.db
+.vscode/
+.idea/
